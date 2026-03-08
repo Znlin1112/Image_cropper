@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>自訂尺寸與自由拖曳裁切</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f5f5; }
+        .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        h2 { text-align: center; color: #333; margin-top: 0; }
+        label { font-weight: bold; display: block; margin-top: 15px; }
+        input[type="number"], input[type="file"] { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 5px; }
+        
+        /* 九宮格對齊按鈕 */
+        .align-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 10px; }
+        .align-grid button { padding: 10px; font-size: 16px; background-color: #e9ecef; border: 1px solid #ccc; border-radius: 5px; cursor: pointer; }
+        .align-grid button:hover { background-color: #d3d9df; }
+        
+        .main-btn { display: block; width: 100%; padding: 12px; background-color: #007BFF; color: white; border: none; border-radius: 5px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 20px; }
+        .main-btn:hover { background-color: #0056b3; }
+        .nav-btn { display: block; width: 100%; padding: 10px; background-color: #6c757d; color: white; text-align: center; text-decoration: none; border-radius: 5px; margin-bottom: 20px; box-sizing: border-box;}
+        
+        /* 預覽區塊設定 */
+        #preview-wrapper { width: 100%; background: #ddd; border: 2px dashed #999; margin-top: 15px; position: relative; overflow: hidden; border-radius: 5px; }
+        #crop-container { position: absolute; top: 0; left: 0; overflow: hidden; background: repeating-conic-gradient(#ccc 0% 25%, transparent 0% 50%) 50% / 20px 20px; }
+        #image-to-crop { position: absolute; cursor: grab; transform-origin: top left; }
+        #image-to-crop:active { cursor: grabbing; }
+        
+        .instructions { font-size: 14px; color: #666; text-align: center; margin-bottom: 15px; }
+        #result-img { max-width: 100%; border: 1px solid #ccc; border-radius: 5px; margin-top: 15px; display: none; }
+    </style>
+</head>
+<body>
+
+<a href="index.html" class="nav-btn">🔙 返回「等份完美分割」頁面</a>
+
+<div class="card">
+    <h2>自訂尺寸 & 自由拖曳裁切</h2>
+    <p class="instructions">設定尺寸後，你可以直接在下方框內<b>拖曳圖片</b>，或使用九宮格按鈕快速對齊。</p>
+    
+    <label>1. 選擇圖片：</label>
+    <input type="file" id="imageInput" accept="image/*">
+
+    <div style="display: flex; gap: 10px;">
+        <div style="flex: 1;">
+            <label>目標寬度 (像素)：</label>
+            <input type="number" id="targetW" value="800" onchange="updatePreviewSize()">
+        </div>
+        <div style="flex: 1;">
+            <label>目標高度 (像素)：</label>
+            <input type="number" id="targetH" value="800" onchange="updatePreviewSize()">
+        </div>
+    </div>
+
+    <label>2. 快速對齊標準：</label>
+    <div class="align-grid">
+        <button onclick="alignImg('top', 'left')">↖️ 左上</button>
+        <button onclick="alignImg('top', 'center')">⬆️ 靠上</button>
+        <button onclick="alignImg('top', 'right')">↗️ 右上</button>
+        <button onclick="alignImg('center', 'left')">⬅️ 靠左</button>
+        <button onclick="alignImg('center', 'center')">⏺️ 正中</button>
+        <button onclick="alignImg('center', 'right')">➡️ 靠右</button>
+        <button onclick="alignImg('bottom', 'left')">↙️ 左下</button>
+        <button onclick="alignImg('bottom', 'center')">⬇️ 靠下</button>
+        <button onclick="alignImg('bottom', 'right')">↘️ 右下</button>
+    </div>
+
+    <label>3. 拖曳預覽區：</label>
+    <div id="preview-wrapper">
+        <div id="crop-container">
+            <img id="image-to-crop" draggable="false" style="display: none;">
+        </div>
+    </div>
+
+    <button class="main-btn" onclick="generateCrop()">✂️ 產生裁切圖片</button>
+</div>
+
+<div class="card" id="resultCard" style="display: none;">
+    <h3 style="text-align: center;">裁切結果</h3>
+    <p class="instructions">電腦請「右鍵 > 另存圖片」，手機請「長按圖片 > 儲存」。</p>
+    <div style="text-align: center;">
+        <img id="result-img">
+    </div>
+</div>
+
+<script>
+    const fileInput = document.getElementById('imageInput');
+    const imgEl = document.getElementById('image-to-crop');
+    const container = document.getElementById('crop-container');
+    const wrapper = document.getElementById('preview-wrapper');
+    
+    let originalFormat = 'image/png';
+    let scale = 1; // 用來記錄預覽區的縮放比例
+
+    // 載入圖片
+    fileInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        originalFormat = file.type === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+        
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            imgEl.onload = function() {
+                imgEl.style.display = 'block';
+                updatePreviewSize();
+                alignImg('center', 'center'); // 預設置中
+            }
+            imgEl.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+
+    // 更新預覽區大小
+    function updatePreviewSize() {
+        if (imgEl.style.display === 'none') return;
+        
+        const targetW = parseInt(document.getElementById('targetW').value) || 800;
+        const targetH = parseInt(document.getElementById('targetH').value) || 800;
+        
+        container.style.width = targetW + 'px';
+        container.style.height = targetH + 'px';
+
+        const wrapperW = wrapper.clientWidth;
+        
+        // 如果設定的裁切寬度大於手機/螢幕寬度，將畫面等比例縮小以適應螢幕
+        if (targetW > wrapperW) {
+            scale = wrapperW / targetW;
+            container.style.transform = `scale(${scale})`;
+            container.style.transformOrigin = 'top left';
+            wrapper.style.height = (targetH * scale) + 'px';
+        } else {
+            scale = 1;
+            container.style.transform = 'none';
+            wrapper.style.height = targetH + 'px';
+        }
+    }
+
+    // 視窗大小改變時重新計算縮放 (例如手機轉橫向)
+    window.addEventListener('resize', updatePreviewSize);
+
+    // 九宮格對齊邏輯
+    window.alignImg = function(vAlign, hAlign) {
+        if (imgEl.style.display === 'none') return;
+        
+        const targetW = parseInt(document.getElementById('targetW').value) || 800;
+        const targetH = parseInt(document.getElementById('targetH').value) || 800;
+        const imgW = imgEl.naturalWidth;
+        const imgH = imgEl.naturalHeight;
+
+        let left = 0, top = 0;
+
+        if (hAlign === 'center') left = (targetW - imgW) / 2;
+        else if (hAlign === 'right') left = targetW - imgW;
+
+        if (vAlign === 'center') top = (targetH - imgH) / 2;
+        else if (vAlign === 'bottom') top = targetH - imgH;
+
+        imgEl.style.left = left + 'px';
+        imgEl.style.top = top + 'px';
+    };
+
+    // 拖曳邏輯 (支援滑鼠與手機觸控)
+    let isDragging = false;
+    let startX, startY, initialLeft, initialTop;
+
+    function startDrag(e) {
+        if (imgEl.style.display === 'none') return;
+        isDragging = true;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        startX = clientX;
+        startY = clientY;
+        initialLeft = parseFloat(imgEl.style.left || 0);
+        initialTop = parseFloat(imgEl.style.top || 0);
+        // 防止手機螢幕跟著滑動
+        if (e.cancelable) e.preventDefault(); 
+    }
+
+    function doDrag(e) {
+        if (!isDragging) return;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        
+        // 計算移動距離，並根據縮放比例還原真實移動像素
+        const dx = (clientX - startX) / scale;
+        const dy = (clientY - startY) / scale;
+
+        imgEl.style.left = (initialLeft + dx) + 'px';
+        imgEl.style.top = (initialTop + dy) + 'px';
+        if (e.cancelable) e.preventDefault();
+    }
+
+    function endDrag() {
+        isDragging = false;
+    }
+
+    // 綁定事件
+    imgEl.addEventListener('mousedown', startDrag);
+    imgEl.addEventListener('touchstart', startDrag, { passive: false });
+    
+    window.addEventListener('mousemove', doDrag, { passive: false });
+    window.addEventListener('touchmove', doDrag, { passive: false });
+    
+    window.addEventListener('mouseup', endDrag);
+    window.addEventListener('touchend', endDrag);
+
+    // 產生圖片
+    window.generateCrop = function() {
+        if (imgEl.style.display === 'none') {
+            alert('請先上傳一張圖片！');
+            return;
+        }
+
+        const targetW = parseInt(document.getElementById('targetW').value) || 800;
+        const targetH = parseInt(document.getElementById('targetH').value) || 800;
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext('2d');
+
+        const currentLeft = parseFloat(imgEl.style.left || 0);
+        const currentTop = parseFloat(imgEl.style.top || 0);
+
+        // 將圖片繪製到 Canvas (會根據你拖曳的位置精準繪圖)
+        ctx.drawImage(imgEl, currentLeft, currentTop);
+
+        const resultImg = document.getElementById('result-img');
+        resultImg.src = canvas.toDataURL(originalFormat, 0.95);
+        resultImg.style.display = 'inline-block';
+        
+        document.getElementById('resultCard').style.display = 'block';
+        document.getElementById('resultCard').scrollIntoView({ behavior: 'smooth' });
+    };
+</script>
+
+</body>
+</html>
