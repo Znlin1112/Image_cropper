@@ -12,7 +12,10 @@ This is a simple, browser-based image cropper generated with the help of Gemini.
 * **保留原圖格式：** PNG 透明背景不流失，JPEG 畫質不壓縮。
 * **跨平台支援：** 只要有瀏覽器，電腦和手機都能直接使用。
 
----
+使用網址：https://znlin1112.github.io/Image_cropper/
+
+--- 
+
 
 ## 📱 如何在手機上當作 App 使用？
 
