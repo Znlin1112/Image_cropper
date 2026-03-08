@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>完美圖片裁切器 (電腦/手機通用)</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f5f5; }
+        .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        h2 { text-align: center; color: #333; }
+        label { font-weight: bold; display: block; margin-top: 10px; }
+        input[type="number"], input[type="file"] { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; }
+        .mode-section { margin-top: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
+        button { display: block; width: 100%; padding: 12px; background-color: #4CAF50; color: white; border: none; border-radius: 5px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 20px; }
+        button:hover { background-color: #45a049; }
+        #output { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 20px; }
+        .output-img { max-width: 48%; border: 1px solid #ccc; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .instructions { font-size: 14px; color: #666; text-align: center; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>完美圖片裁切器</h2>
+    <p class="instructions">請選擇圖片與分割模式，系統會自動微調置中並消除白邊。</p>
+    
+    <label>1. 選擇圖片：</label>
+    <input type="file" id="imageInput" accept="image/*">
+
+    <label>2. 選擇分割模式：</label>
+    <div>
+        <input type="radio" id="mode1" name="mode" value="1" checked onchange="toggleMode()"> 
+        <label for="mode1" style="display:inline;">指定「等份數量」</label>
+    </div>
+    <div>
+        <input type="radio" id="mode2" name="mode" value="2" onchange="toggleMode()"> 
+        <label for="mode2" style="display:inline;">指定「單塊像素尺寸」</label>
+    </div>
+
+    <div id="mode1-inputs" class="mode-section">
+        <label>橫向等份：</label>
+        <input type="number" id="cols" value="3" min="1">
+        <label>直向等份：</label>
+        <input type="number" id="rows" value="2" min="1">
+    </div>
+
+    <div id="mode2-inputs" class="mode-section" style="display: none;">
+        <label>每塊寬度 (像素)：</label>
+        <input type="number" id="pieceWidth" value="1652" min="1">
+        <label>每塊高度 (像素)：</label>
+        <input type="number" id="pieceHeight" value="2065" min="1">
+    </div>
+
+    <button onclick="processImage()">開始完美裁切</button>
+</div>
+
+<div class="card" id="resultCard" style="display: none;">
+    <h3 style="text-align: center;">裁切結果</h3>
+    <p class="instructions">電腦請「右鍵 > 另存圖片」，手機請「長按圖片 > 儲存」。</p>
+    <div id="output"></div>
+</div>
+
+<script>
+    function toggleMode() {
+        const mode = document.querySelector('input[name="mode"]:checked').value;
+        document.getElementById('mode1-inputs').style.display = mode === '1' ? 'block' : 'none';
+        document.getElementById('mode2-inputs').style.display = mode === '2' ? 'block' : 'none';
+    }
+
+    function processImage() {
+        const fileInput = document.getElementById('imageInput');
+        if (!fileInput.files || !fileInput.files[0]) {
+            alert('請先選擇一張圖片！');
+            return;
+        }
+
+        const file = fileInput.files[0];
+        // 取得原圖格式，預設轉出格式 (若是 jpeg 就維持 jpeg，否則轉 png 保留透明)
+        const format = file.type === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+        
+        const img = new Image();
+        const reader = new FileReader();
+
+        reader.onload = function(e) {
+            img.onload = function() {
+                const width = img.width;
+                const height = img.height;
+                const mode = document.querySelector('input[name="mode"]:checked').value;
+                
+                let cols, rows, targetWidth, targetHeight, pieceWidth, pieceHeight;
+
+                if (mode === '1') {
+                    cols = parseInt(document.getElementById('cols').value);
+                    rows = parseInt(document.getElementById('rows').value);
+                    targetWidth = Math.floor(width / cols) * cols;
+                    targetHeight = Math.floor(height / rows) * rows;
+                    pieceWidth = targetWidth / cols;
+                    pieceHeight = targetHeight / rows;
+                } else {
+                    pieceWidth = parseInt(document.getElementById('pieceWidth').value);
+                    pieceHeight = parseInt(document.getElementById('pieceHeight').value);
+                    cols = Math.floor(width / pieceWidth);
+                    rows = Math.floor(height / pieceHeight);
+                    
+                    if (cols === 0 || rows === 0) {
+                        alert('錯誤：輸入的尺寸大於原始圖片，無法分割！');
+                        return;
+                    }
+                    targetWidth = cols * pieceWidth;
+                    targetHeight = rows * pieceHeight;
+                }
+
+                const leftMargin = Math.floor((width - targetWidth) / 2);
+                const topMargin = Math.floor((height - targetHeight) / 2);
+
+                const outputDiv = document.getElementById('output');
+                outputDiv.innerHTML = ''; // 清空先前的結果
+                document.getElementById('resultCard').style.display = 'block';
+
+                for (let r = 0; r < rows; r++) {
+                    for (let c = 0; c < cols; c++) {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = pieceWidth;
+                        canvas.height = pieceHeight;
+                        const ctx = canvas.getContext('2d');
+
+                        const sx = leftMargin + c * pieceWidth;
+                        const sy = topMargin + r * pieceHeight;
+
+                        // 將原圖的特定區塊畫到 canvas 上
+                        ctx.drawImage(img, sx, sy, pieceWidth, pieceHeight, 0, 0, pieceWidth, pieceHeight);
+
+                        // 產生圖片並顯示在網頁上
+                        const dataUrl = canvas.toDataURL(format, 0.95);
+                        const resultImg = document.createElement('img');
+                        resultImg.src = dataUrl;
+                        resultImg.className = 'output-img';
+                        outputDiv.appendChild(resultImg);
+                    }
+                }
+                
+                // 畫面自動滾動到結果區
+                document.getElementById('resultCard').scrollIntoView({ behavior: 'smooth' });
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+</script>
+
+</body>
+</html>
